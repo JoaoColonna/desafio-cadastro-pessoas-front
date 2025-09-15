@@ -59,8 +59,28 @@ export const TokenService = {
   // Remover token e informações do usuário (logout)
   removeToken: () => {
     if (typeof window !== 'undefined') {
+      // Remover itens específicos
       localStorage.removeItem(TOKEN_KEY);
       localStorage.removeItem(USER_INFO);
+      
+      // Limpar dados de sessão
+      sessionStorage.clear();
+      
+      // Limpar cookies relacionados à autenticação
+      document.cookie.split(";").forEach(function(c) {
+        document.cookie = c.replace(/^ +/, "")
+          .replace(/=.*/, "=;expires=" + new Date().toUTCString() + ";path=/");
+      });
+      
+      // Limpar cache do navegador
+      if (window.caches) {
+        // Limpar cache da API
+        caches.keys().then(keyList => {
+          return Promise.all(keyList.map(key => {
+            return caches.delete(key);
+          }));
+        });
+      }
     }
   },
 

@@ -46,10 +46,17 @@ export const AuthService = {
     return data;
   },
 
-  // Logout
+  // Logout completo - limpa todos os tokens e cache
   logout: (): void => {
+    // Remover todos os tokens e dados de autenticação
     TokenService.removeToken();
-    // Redirecionar para a página de login pode ser feito no componente
+    
+    // Limpar qualquer estado da aplicação que possa conter dados sensíveis
+    if (typeof window !== 'undefined') {
+      // Forçar recarregamento para garantir limpeza de estados em memória
+      // O redirecionamento para a página de login deve ser feito pelo componente
+      window.localStorage.clear(); // Limpa todo o localStorage
+    }
   },
 
   // Verificar autenticação

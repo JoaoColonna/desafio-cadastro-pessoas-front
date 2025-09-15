@@ -153,6 +153,13 @@ export default function PessoasCrud() {
   });
   const [searchQuery, setSearchQuery] = React.useState('');
   const [includeAddress, setIncludeAddress] = React.useState(true);
+  const [counters, setCounters] = React.useState({
+    totalV1: 0,
+    totalV2: 0
+  });
+  
+  // Cálculo do total de registros
+  const totalRecords = counters.totalV1 + counters.totalV2;
   const [notification, setNotification] = React.useState<NotificationState>({
     open: false,
     message: '',
@@ -202,6 +209,12 @@ export default function PessoasCrud() {
         new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime()
       );
       
+      // Atualizar contadores
+      setCounters({
+        totalV1: personsV1.length,
+        totalV2: personsV2.length
+      });
+      
       setRows(combinedData);
     } catch (error) {
       const errorMessage = formatApiError(error);
@@ -222,22 +235,24 @@ export default function PessoasCrud() {
   const handleOpenDialog = (mode: 'create' | 'edit', person?: CombinedPersonResponseDto) => {
     setDialogMode(mode);
     if (mode === 'edit' && person) {
-      // Verifica se a pessoa tem endereço preenchido
+      // Verifica se a pessoa tem endereço preenchido e/ou é uma pessoa V2
+      const isV2 = person.version === 'v2';
       const hasAddress = person.endereco && 
         (person.endereco.rua || person.endereco.numero || 
          person.endereco.cidade || person.endereco.estado || 
          person.endereco.cep);
       
+      // Configurar checkbox de incluir endereço
       setIncludeAddress(!!hasAddress);
       
-      // Converte PersonV2ResponseDto para PersonV2Dto para edição
+      // Prepara dados para edição
       const personDto: PersonV2Dto = {
         nome: person.nome,
         cpf: formatCPF(person.cpf),
-        email: person.email,
+        email: person.email || '',
         dataNascimento: ensureUTCDate(person.dataNascimento),
-        sexo: person.sexo,
-        nacionalidade: person.nacionalidade,
+        sexo: person.sexo || '',
+        nacionalidade: person.nacionalidade || '',
         naturalidade: person.naturalidade,
         endereco: person.endereco ? {
           rua: person.endereco.rua || '',
@@ -438,14 +453,23 @@ export default function PessoasCrud() {
       <Box sx={{ width: '100%' }}>
         <Paper sx={{ width: '100%', mb: 2 }}>
           <Toolbar sx={{ pl: { sm: 2 }, pr: { xs: 1, sm: 1 } }}>
-            <Typography
-              sx={{ flex: '1 1 100%' }}
-              variant="h6"
-              id="tableTitle"
-              component="div"
-            >
-              Pessoas Cadastradas
-            </Typography>
+            <Box sx={{ flex: '1 1 100%', display: 'flex', alignItems: 'baseline' }}>
+              <Typography
+                variant="h6"
+                id="tableTitle"
+                component="div"
+                sx={{ mr: 2 }}
+              >
+                Pessoas Cadastradas
+              </Typography>
+              <Typography 
+                variant="subtitle1" 
+                color="text.secondary"
+                sx={{ display: 'flex', alignItems: 'center' }}
+              >
+                ({totalRecords} registros: {counters.totalV1} sem endereço, {counters.totalV2} com endereço)
+              </Typography>
+            </Box>
 
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
               <Box sx={{ position: 'relative', mr: 2 }}>

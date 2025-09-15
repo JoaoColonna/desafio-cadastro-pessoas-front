@@ -35,7 +35,9 @@ export default function Dashboard() {
     const fetchTotalPeople = async () => {
       try {
         setLoading(true);
-        const response = await PersonService.getAllPersons();
+        const responsePersonV1= await PersonService.getAllPersons();
+        const responsePersonV2= await PersonService.getAllPersons();
+        const response = [...responsePersonV1, ...responsePersonV2];
         setTotalPeople(response.length);
         setError(null);
       } catch (err) {
