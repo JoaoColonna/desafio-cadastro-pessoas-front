@@ -32,24 +32,105 @@ import {
   FormControl,
   InputLabel,
   MenuItem,
-  Select
+  Select,
+  Switch,
+  FormControlLabel,
+  Divider
 } from '@mui/material';
+import HomeIcon from '@mui/icons-material/Home';
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns';
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider';
 import { DatePicker } from '@mui/x-date-pickers/DatePicker';
 import SearchIcon from '@mui/icons-material/Search';
 import DashboardLayout from '@/components/DashboardLayout';
 import { formatApiError, NotificationState } from '@/utils/api-error-handler';
-import { PersonV2Dto, PersonV2ResponseDto, EnderecoDto } from '@/types/api-types';
+import { PersonDto, PersonV2Dto, PersonResponseDto, PersonV2ResponseDto, EnderecoDto } from '@/types/api-types';
 
-// Importando o service
-import { PersonService } from '@/services/person-service';
+// Importando os services
+import { PersonServiceV1, PersonServiceV2, PersonService } from '@/services/person-service';
+
+// Interface combinada para exibir ambos os tipos de pessoa
+interface CombinedPersonResponseDto {
+  id: number;
+  nome: string;
+  cpf: string;
+  email?: string;
+  dataNascimento: string;
+  sexo?: string;
+  naturalidade?: string;
+  nacionalidade?: string;
+  dataCadastro: string;
+  dataAtualizacao: string;
+  endereco?: EnderecoDto;
+  // Campo para indicar qual versão é
+  version: 'v1' | 'v2';
+}
 
 // Dados iniciais vazios
-const initialRows: PersonV2ResponseDto[] = [];
+const initialRows: CombinedPersonResponseDto[] = [];
+
+// Função para formatar CEP no padrão 11111-111
+const formatCEP = (cep: string): string => {
+  // Remove todos os caracteres não numéricos
+  const numericCEP = cep.replace(/\D/g, '');
+  
+  // Limita a 8 dígitos
+  const limitedCEP = numericCEP.slice(0, 8);
+  
+  // Adiciona o hífen se tiver pelo menos 6 dígitos
+  if (limitedCEP.length > 5) {
+    return `${limitedCEP.slice(0, 5)}-${limitedCEP.slice(5)}`;
+  }
+  
+  return limitedCEP;
+};
+
+// Função para remover formatação do CEP (mantém apenas números)
+const stripCEP = (cep: string): string => {
+  return cep.replace(/\D/g, '');
+};
+
+// Função para formatar CPF no padrão 123.456.789-00
+const formatCPF = (cpf: string): string => {
+  // Remove todos os caracteres não numéricos
+  const numericCPF = cpf.replace(/\D/g, '');
+  
+  // Limita a 11 dígitos
+  const limitedCPF = numericCPF.slice(0, 11);
+  
+  // Adiciona os pontos e o hífen se tiver dígitos suficientes
+  if (limitedCPF.length > 9) {
+    return `${limitedCPF.slice(0, 3)}.${limitedCPF.slice(3, 6)}.${limitedCPF.slice(6, 9)}-${limitedCPF.slice(9)}`;
+  } else if (limitedCPF.length > 6) {
+    return `${limitedCPF.slice(0, 3)}.${limitedCPF.slice(3, 6)}.${limitedCPF.slice(6)}`;
+  } else if (limitedCPF.length > 3) {
+    return `${limitedCPF.slice(0, 3)}.${limitedCPF.slice(3)}`;
+  }
+  
+  return limitedCPF;
+};
+
+// Função para remover formatação do CPF (mantém apenas números)
+const stripCPF = (cpf: string): string => {
+  return cpf.replace(/\D/g, '').slice(0, 11);
+};
+
+// Função para garantir que as datas estejam em formato UTC
+const ensureUTCDate = (dateStr: string): string => {
+  const date = new Date(dateStr);
+  // Criar uma nova data UTC explicitamente com os componentes de data local
+  const utcDate = new Date(
+    Date.UTC(
+      date.getFullYear(),
+      date.getMonth(),
+      date.getDate()
+    )
+  );
+  return utcDate.toISOString();
+};
 
 export default function PessoasCrud() {
-  const [rows, setRows] = React.useState<PersonV2ResponseDto[]>(initialRows);
+  const [rows, setRows] = React.useState<CombinedPersonResponseDto[]>(initialRows);
   const [editingId, setEditingId] = React.useState<number | null>(null);
   const [openDialog, setOpenDialog] = React.useState(false);
   const [dialogMode, setDialogMode] = React.useState<'create' | 'edit'>('create');
@@ -58,7 +139,7 @@ export default function PessoasCrud() {
     nome: '',
     cpf: '',
     email: '',
-    dataNascimento: new Date().toISOString().split('T')[0],
+    dataNascimento: new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())).toISOString(),
     sexo: '',
     nacionalidade: '',
     naturalidade: '',
@@ -71,6 +152,7 @@ export default function PessoasCrud() {
     }
   });
   const [searchQuery, setSearchQuery] = React.useState('');
+  const [includeAddress, setIncludeAddress] = React.useState(true);
   const [notification, setNotification] = React.useState<NotificationState>({
     open: false,
     message: '',
@@ -85,9 +167,42 @@ export default function PessoasCrud() {
   const fetchPersons = async () => {
     setLoading(true);
     try {
-      const data = await PersonService.getAllPersons();
-      // Ensure the data is correctly typed as PersonV2ResponseDto[]
-      setRows(data as PersonV2ResponseDto[]);
+      // Buscar pessoas de ambas as versões da API
+      const [personsV1, personsV2] = await Promise.all([
+        PersonServiceV1.getAllPersons(),
+        PersonServiceV2.getAllPersons()
+      ]);
+      
+      // Converter PersonResponseDto para CombinedPersonResponseDto
+      const v1Processed = personsV1.map(person => ({
+        ...person,
+        endereco: undefined,  // Pessoa v1 não tem endereço
+        version: 'v1' as const
+      }));
+      
+      // Converter PersonV2ResponseDto para CombinedPersonResponseDto
+      const v2Processed = personsV2.map(person => ({
+        ...person,
+        // Garantir que o endereço esteja definido
+        endereco: person.endereco || {
+          rua: '',
+          numero: '',
+          cidade: '',
+          estado: '',
+          cep: ''
+        },
+        version: 'v2' as const
+      }));
+      
+      // Combinar os resultados
+      const combinedData: CombinedPersonResponseDto[] = [...v1Processed, ...v2Processed];
+      
+      // Ordenar por data de cadastro (mais recente primeiro)
+      combinedData.sort((a, b) => 
+        new Date(b.dataCadastro).getTime() - new Date(a.dataCadastro).getTime()
+      );
+      
+      setRows(combinedData);
     } catch (error) {
       const errorMessage = formatApiError(error);
       setNotification({
@@ -104,35 +219,53 @@ export default function PessoasCrud() {
     setNotification({ ...notification, open: false });
   };
 
-  const handleOpenDialog = (mode: 'create' | 'edit', person?: PersonV2ResponseDto) => {
+  const handleOpenDialog = (mode: 'create' | 'edit', person?: CombinedPersonResponseDto) => {
     setDialogMode(mode);
     if (mode === 'edit' && person) {
+      // Verifica se a pessoa tem endereço preenchido
+      const hasAddress = person.endereco && 
+        (person.endereco.rua || person.endereco.numero || 
+         person.endereco.cidade || person.endereco.estado || 
+         person.endereco.cep);
+      
+      setIncludeAddress(!!hasAddress);
+      
       // Converte PersonV2ResponseDto para PersonV2Dto para edição
       const personDto: PersonV2Dto = {
         nome: person.nome,
-        cpf: person.cpf,
+        cpf: formatCPF(person.cpf),
         email: person.email,
-        dataNascimento: person.dataNascimento,
+        dataNascimento: ensureUTCDate(person.dataNascimento),
         sexo: person.sexo,
         nacionalidade: person.nacionalidade,
         naturalidade: person.naturalidade,
-        endereco: {
-          rua: person.endereco.rua,
-          numero: person.endereco.numero,
-          cidade: person.endereco.cidade,
-          estado: person.endereco.estado,
-          cep: person.endereco.cep
+        endereco: person.endereco ? {
+          rua: person.endereco.rua || '',
+          numero: person.endereco.numero || '',
+          cidade: person.endereco.cidade || '',
+          estado: person.endereco.estado || '',
+          // CEP já é armazenado no formato numérico
+          cep: person.endereco.cep || ''
+        } : {
+          rua: '',
+          numero: '',
+          cidade: '',
+          estado: '',
+          cep: ''
         }
       };
       setCurrentPerson(personDto);
       setEditingId(person.id);
     } else {
+      // Para nova pessoa, inicializa includeAddress como false
+      setIncludeAddress(false);
+      
       // Redefine o currentPerson para um novo objeto PersonV2Dto
       setCurrentPerson({
         nome: '',
         cpf: '',
         email: '',
-        dataNascimento: new Date().toISOString().split('T')[0],
+        dataNascimento: new Date(Date.UTC(new Date().getFullYear(), new Date().getMonth(), new Date().getDate())).toISOString(),
         sexo: '',
         nacionalidade: '',
         naturalidade: '',
@@ -157,15 +290,84 @@ export default function PessoasCrud() {
     setLoading(true);
     
     try {
+      // Campos básicos para ambas as versões
+      const basePersonData: PersonDto = {
+        nome: currentPerson.nome,
+        cpf: stripCPF(currentPerson.cpf),
+        email: currentPerson.email,
+        dataNascimento: ensureUTCDate(currentPerson.dataNascimento),
+        sexo: currentPerson.sexo,
+        naturalidade: currentPerson.naturalidade,
+        nacionalidade: currentPerson.nacionalidade
+      };
+      
       if (dialogMode === 'create') {
-        await PersonService.createPerson(currentPerson);
+        if (includeAddress) {
+          // Criar uma PessoaV2 (com endereço)
+          const personV2Data: PersonV2Dto = {
+            ...basePersonData,
+            endereco: {
+              rua: currentPerson.endereco?.rua || '',
+              numero: currentPerson.endereco?.numero || '',
+              cidade: currentPerson.endereco?.cidade || '',
+              estado: currentPerson.endereco?.estado || '',
+              cep: stripCEP(currentPerson.endereco?.cep || '')
+            }
+          };
+          
+          await PersonServiceV2.createPerson(personV2Data);
+        } else {
+          // Criar uma Pessoa (sem endereço)
+          await PersonServiceV1.createPerson(basePersonData);
+        }
+        
         setNotification({
           open: true,
           message: 'Pessoa cadastrada com sucesso!',
           severity: 'success',
         });
       } else if (editingId !== null) {
-        await PersonService.updatePerson(editingId, currentPerson);
+        // Para atualizações, verificamos qual versão estava sendo editada
+        const personToEdit = rows.find(p => p.id === editingId);
+        
+        if (personToEdit?.version === 'v1' && !includeAddress) {
+          // Atualizar uma Pessoa V1
+          await PersonServiceV1.updatePerson(editingId, basePersonData);
+        } else if (personToEdit?.version === 'v2' && includeAddress) {
+          // Atualizar uma Pessoa V2
+          const personV2Data: PersonV2Dto = {
+            ...basePersonData,
+            endereco: {
+              rua: currentPerson.endereco?.rua || '',
+              numero: currentPerson.endereco?.numero || '',
+              cidade: currentPerson.endereco?.cidade || '',
+              estado: currentPerson.endereco?.estado || '',
+              cep: stripCEP(currentPerson.endereco?.cep || '')
+            }
+          };
+          
+          await PersonServiceV2.updatePerson(editingId, personV2Data);
+        } else if (personToEdit?.version === 'v1' && includeAddress) {
+          // Converter de V1 para V2 (criar novo e excluir antigo)
+          const personV2Data: PersonV2Dto = {
+            ...basePersonData,
+            endereco: {
+              rua: currentPerson.endereco?.rua || '',
+              numero: currentPerson.endereco?.numero || '',
+              cidade: currentPerson.endereco?.cidade || '',
+              estado: currentPerson.endereco?.estado || '',
+              cep: stripCEP(currentPerson.endereco?.cep || '')
+            }
+          };
+          
+          await PersonServiceV2.createPerson(personV2Data);
+          await PersonServiceV1.deletePerson(editingId);
+        } else if (personToEdit?.version === 'v2' && !includeAddress) {
+          // Converter de V2 para V1 (criar novo e excluir antigo)
+          await PersonServiceV1.createPerson(basePersonData);
+          await PersonServiceV2.deletePerson(editingId);
+        }
+        
         setNotification({
           open: true,
           message: 'Pessoa atualizada com sucesso!',
@@ -188,11 +390,17 @@ export default function PessoasCrud() {
     }
   };
 
-  const handleDelete = async (id: number) => {
+  const handleDelete = async (id: number, version: 'v1' | 'v2') => {
     if (window.confirm('Tem certeza que deseja excluir esta pessoa?')) {
       setLoading(true);
       try {
-        await PersonService.deletePerson(id);
+        // Usar o serviço adequado de acordo com a versão
+        if (version === 'v1') {
+          await PersonServiceV1.deletePerson(id);
+        } else {
+          await PersonServiceV2.deletePerson(id);
+        }
+        
         setNotification({
           open: true,
           message: 'Pessoa excluída com sucesso!',
@@ -290,16 +498,40 @@ export default function PessoasCrud() {
                         <TableCell component="th" scope="row">
                           {row.nome}
                         </TableCell>
-                        <TableCell>{row.cpf}</TableCell>
+                        <TableCell>{formatCPF(row.cpf)}</TableCell>
                         <TableCell>{row.email || '-'}</TableCell>
                         <TableCell>{new Date(row.dataNascimento).toLocaleDateString('pt-BR')}</TableCell>
-                        <TableCell>{`${row.endereco.rua}, ${row.endereco.numero} - ${row.endereco.cidade}/${row.endereco.estado}`}</TableCell>
+                        <TableCell>
+                          {row.endereco && (row.endereco.rua || row.endereco.numero || row.endereco.cidade || row.endereco.estado) ? (
+                            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+                              <HomeIcon fontSize="small" sx={{ mr: 1, color: 'primary.main' }} />
+                              {`${row.endereco.rua || '-'}, ${row.endereco.numero || '-'} - ${row.endereco.cidade || '-'}/${row.endereco.estado || '-'}`}
+                            </Box>
+                          ) : (
+                            <Typography variant="body2" sx={{ color: 'text.secondary', fontStyle: 'italic' }}>
+                              Sem endereço cadastrado
+                            </Typography>
+                          )}
+                        </TableCell>
                         <TableCell align="right">
                           <Stack direction="row" spacing={1} justifyContent="flex-end">
                             <Tooltip title="Editar">
                               <IconButton
                                 aria-label="editar"
-                                onClick={() => handleOpenDialog('edit', row)}
+                                onClick={() => {
+                                  // Garantir que row.endereco exista antes de editar
+                                  const safeRow = row.endereco ? row : {
+                                    ...row,
+                                    endereco: {
+                                      rua: '',
+                                      numero: '',
+                                      cidade: '',
+                                      estado: '',
+                                      cep: ''
+                                    }
+                                  };
+                                  handleOpenDialog('edit', safeRow as CombinedPersonResponseDto);
+                                }}
                               >
                                 <EditIcon />
                               </IconButton>
@@ -307,7 +539,7 @@ export default function PessoasCrud() {
                             <Tooltip title="Excluir">
                               <IconButton
                                 aria-label="excluir"
-                                onClick={() => handleDelete(row.id)}
+                                onClick={() => handleDelete(row.id, row.version)}
                               >
                                 <DeleteIcon />
                               </IconButton>
@@ -356,7 +588,7 @@ export default function PessoasCrud() {
               label="CPF"
               name="cpf"
               value={currentPerson.cpf}
-              onChange={(e) => setCurrentPerson({ ...currentPerson, cpf: e.target.value })}
+              onChange={(e) => setCurrentPerson({ ...currentPerson, cpf: formatCPF(e.target.value) })}
             />
             <TextField
               margin="normal"
@@ -376,7 +608,7 @@ export default function PessoasCrud() {
                   if (newValue) {
                     setCurrentPerson({ 
                       ...currentPerson, 
-                      dataNascimento: newValue.toISOString().split('T')[0] 
+                      dataNascimento: ensureUTCDate(newValue.toISOString())
                     });
                   }
                 }}
@@ -419,17 +651,48 @@ export default function PessoasCrud() {
               onChange={(e) => setCurrentPerson({ ...currentPerson, nacionalidade: e.target.value })}
             />
             
-            <Typography variant="h6" sx={{ mt: 2, mb: 1 }}>
-              Endereço
-            </Typography>
+            <Box sx={{ mt: 2, display: 'flex', alignItems: 'center' }}>
+              <FormControlLabel
+                control={
+                  <Switch 
+                    checked={includeAddress}
+                    onChange={(e) => setIncludeAddress(e.target.checked)}
+                    color="primary"
+                    icon={<HomeIcon fontSize="small" />}
+                    checkedIcon={<HomeIcon fontSize="small" />}
+                  />
+                }
+                label="Incluir endereço"
+              />
+            </Box>
+
+            <Divider sx={{ my: 2 }} />
+            
+            <Box 
+              sx={{ 
+                mt: 1, 
+                mb: 1, 
+                p: 2, 
+                border: '1px solid',
+                borderColor: includeAddress ? 'primary.main' : 'grey.300',
+                borderRadius: 1,
+                backgroundColor: includeAddress ? 'transparent' : 'rgba(0, 0, 0, 0.04)',
+                transition: 'all 0.3s ease'
+              }}
+            >
+              <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', color: includeAddress ? 'primary.main' : 'text.secondary' }}>
+                <HomeIcon sx={{ mr: 1 }} />
+                Endereço
+              </Typography>
             
             <TextField
               margin="normal"
-              required
+              required={includeAddress}
               fullWidth
               id="rua"
               label="Rua"
               name="rua"
+              disabled={!includeAddress}
               value={currentPerson.endereco.rua}
               onChange={(e) => setCurrentPerson({ 
                 ...currentPerson, 
@@ -442,11 +705,12 @@ export default function PessoasCrud() {
             
             <TextField
               margin="normal"
-              required
+              required={includeAddress}
               fullWidth
               id="numero"
               label="Número"
               name="numero"
+              disabled={!includeAddress}
               value={currentPerson.endereco.numero}
               onChange={(e) => setCurrentPerson({ 
                 ...currentPerson, 
@@ -459,11 +723,12 @@ export default function PessoasCrud() {
             
             <TextField
               margin="normal"
-              required
+              required={includeAddress}
               fullWidth
               id="cidade"
               label="Cidade"
               name="cidade"
+              disabled={!includeAddress}
               value={currentPerson.endereco.cidade}
               onChange={(e) => setCurrentPerson({ 
                 ...currentPerson, 
@@ -476,11 +741,12 @@ export default function PessoasCrud() {
             
             <TextField
               margin="normal"
-              required
+              required={includeAddress}
               fullWidth
               id="estado"
               label="Estado"
               name="estado"
+              disabled={!includeAddress}
               value={currentPerson.endereco.estado}
               onChange={(e) => setCurrentPerson({ 
                 ...currentPerson, 
@@ -493,12 +759,15 @@ export default function PessoasCrud() {
             
             <TextField
               margin="normal"
-              required
+              required={includeAddress}
               fullWidth
               id="cep"
               label="CEP"
               name="cep"
-              value={currentPerson.endereco.cep}
+              disabled={!includeAddress}
+              placeholder="11111-111"
+              inputProps={{ maxLength: 9 }}
+              value={formatCEP(currentPerson.endereco.cep || '')}
               onChange={(e) => setCurrentPerson({ 
                 ...currentPerson, 
                 endereco: { 
@@ -507,6 +776,7 @@ export default function PessoasCrud() {
                 } 
               })}
             />
+            </Box>
           </Box>
         </DialogContent>
         <DialogActions>

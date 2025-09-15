@@ -116,12 +116,6 @@ export default function DashboardLayout({ children, title = 'Dashboard' }: Dashb
   
   const secondaryListItems = (
     <>
-      <ListItemButton>
-        <ListItemIcon>
-          <AccountCircleIcon />
-        </ListItemIcon>
-        <ListItemText primary="Meu Perfil" />
-      </ListItemButton>
       <ListItemButton onClick={handleLogout}>
         <ListItemIcon>
           <LogoutIcon />
@@ -160,11 +154,6 @@ export default function DashboardLayout({ children, title = 'Dashboard' }: Dashb
           >
             {title}
           </Typography>
-          <IconButton color="inherit">
-            <Badge badgeContent={4} color="secondary">
-              <NotificationsIcon />
-            </Badge>
-          </IconButton>
         </Toolbar>
       </AppBar>
       <Drawer variant="permanent" open={open}>

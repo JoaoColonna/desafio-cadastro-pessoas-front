@@ -175,5 +175,8 @@ const PersonServiceV2 = {
   }
 };
 
-// Exportar o serviço de acordo com a versão da API
+// Exportar os serviços individuais para que possam ser usados separadamente
+export { PersonServiceV1, PersonServiceV2 };
+
+// Exportar o serviço padrão de acordo com a versão da API configurada
 export const PersonService = API_VERSION === 'v2' ? PersonServiceV2 : PersonServiceV1;

@@ -2,16 +2,16 @@
 
 import * as React from 'react';
 import { styled } from '@mui/material/styles';
-import Grid from '@mui/material/Grid';
 import Paper from '@mui/material/Paper';
 import Typography from '@mui/material/Typography';
 import Link from '@mui/material/Link';
-import Chart from '@mui/icons-material/ShowChart';
 import People from '@mui/icons-material/People';
-import Assignment from '@mui/icons-material/Assignment';
 import Stack from '@mui/material/Stack';
 import Box from '@mui/material/Box';
+import CircularProgress from '@mui/material/CircularProgress';
 import DashboardLayout from '@/components/DashboardLayout';
+import { PersonService } from '@/services/person-service';
+import { formatApiError } from '@/utils/api-error-handler';
 
 const Item = styled(Paper)(({ theme }) => ({
   backgroundColor: theme.palette.mode === 'dark' ? '#1A2027' : '#fff',
@@ -27,40 +27,46 @@ const Item = styled(Paper)(({ theme }) => ({
 }));
 
 export default function Dashboard() {
+  const [totalPeople, setTotalPeople] = React.useState<number | null>(null);
+  const [loading, setLoading] = React.useState(true);
+  const [error, setError] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    const fetchTotalPeople = async () => {
+      try {
+        setLoading(true);
+        const response = await PersonService.getAllPersons();
+        setTotalPeople(response.length);
+        setError(null);
+      } catch (err) {
+        console.error('Erro ao buscar dados:', err);
+        setError('Erro ao carregar dados de pessoas');
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchTotalPeople();
+  }, []);
+  
   return (
     <DashboardLayout title="Dashboard">
       <Box sx={{ flexGrow: 1 }}>
-        <Box sx={{ display: 'grid', gridTemplateColumns: { xs: '1fr', md: 'repeat(3, 1fr)' }, gap: 3, mb: 3 }}>
+        <Box sx={{ display: 'flex', justifyContent: 'center', mb: 3 }}>
           {/* Card com Total de Pessoas */}
-          <Item elevation={3}>
+          <Item elevation={3} sx={{ width: '100%', maxWidth: '400px' }}>
             <People sx={{ fontSize: 60, color: 'primary.main', mb: 2 }} />
-            <Typography component="h2" variant="h4" color="primary" gutterBottom>
-              237
-            </Typography>
+            {loading ? (
+              <CircularProgress />
+            ) : error ? (
+              <Typography color="error">{error}</Typography>
+            ) : (
+              <Typography component="h2" variant="h4" color="primary" gutterBottom>
+                {totalPeople !== null ? totalPeople : '-'}
+              </Typography>
+            )}
             <Typography variant="h6">
               Total de Pessoas
-            </Typography>
-          </Item>
-          
-          {/* Card com Cadastros Recentes */}
-          <Item elevation={3}>
-            <Assignment sx={{ fontSize: 60, color: 'secondary.main', mb: 2 }} />
-            <Typography component="h2" variant="h4" color="secondary" gutterBottom>
-              28
-            </Typography>
-            <Typography variant="h6">
-              Cadastros Recentes
-            </Typography>
-          </Item>
-          
-          {/* Card com Taxa de Crescimento */}
-          <Item elevation={3}>
-            <Chart sx={{ fontSize: 60, color: 'success.main', mb: 2 }} />
-            <Typography component="h2" variant="h4" color="success.main" gutterBottom>
-              +12%
-            </Typography>
-            <Typography variant="h6">
-              Taxa de Crescimento
             </Typography>
           </Item>
         </Box>
